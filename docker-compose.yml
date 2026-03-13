@@ -1,0 +1,130 @@
+services:
+
+  # ─────────────────────────────────────────
+  # DATABASE — stores encrypted patient data
+  # ─────────────────────────────────────────
+  mysql:
+    image: mysql:8.0
+    environment:
+      MYSQL_ROOT_PASSWORD: rootpass
+      MYSQL_DATABASE: patientdb
+      MYSQL_USER: appuser
+      MYSQL_PASSWORD: apppass
+    ports:
+      - "3307:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ./db/init.sql:/docker-entrypoint-initdb.d/init.sql
+    networks: [ appnet ]
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 10s
+      retries: 5
+
+  # ─────────────────────────────────────────
+  # KEYCLOAK — handles login & roles (IAM)
+  # ─────────────────────────────────────────
+  keycloak:
+    image: quay.io/keycloak/keycloak:24.0
+    command: ["start-dev"]
+    environment:
+      - KEYCLOAK_ADMIN=admin
+      - KEYCLOAK_ADMIN_PASSWORD=admin
+    ports:
+      - "8080:8080"       # ← changed from 8081 to 8080
+    networks: [ appnet ]
+
+  # ─────────────────────────────────────────
+  # APP — our Flask patient records API
+  # ─────────────────────────────────────────
+  app:
+    build: ./app
+    environment:
+      - OIDC_ISSUER=http://keycloak:8080/realms/health
+      - OIDC_AUDIENCE=health-api
+      - APP_DATA_KEY=/run/secrets/data_key
+      - DB_HOST=mysql
+      - DB_USER=appuser
+      - DB_PASSWORD=apppass
+      - DB_NAME=patientdb
+    secrets:
+      - data_key
+    ports:
+      - "8443:8443"
+    volumes:
+      - ./certs:/app/certs
+      - ./data:/app/data
+    depends_on:
+      mysql:
+        condition: service_healthy     # ← wait for MySQL to be ready
+      keycloak:
+        condition: service_started
+    networks: [ appnet ]
+
+  # ─────────────────────────────────────────
+  # JENKINS — CI/CD pipeline
+  # ─────────────────────────────────────────
+  jenkins:
+    image: jenkins/jenkins:lts
+    user: root
+    ports:
+      - "9090:8080"       # ← changed from 8081 to 9090
+      - "50000:50000"
+    volumes:
+      - jenkins_home:/var/jenkins_home
+      - /var/run/docker.sock:/var/run/docker.sock
+    networks: [ appnet ]
+
+  # ─────────────────────────────────────────
+  # MONITORING — Prometheus + Grafana + Loki
+  # ─────────────────────────────────────────
+  prometheus:
+    image: prom/prometheus
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml
+    ports:
+      - "9091:9090"
+    networks: [ appnet ]
+
+  grafana:
+    image: grafana/grafana
+    ports:
+      - "3000:3000"
+    networks: [ appnet ]
+
+  loki:
+    image: grafana/loki:2.8.2
+    command: -config.file=/etc/loki/config.yml -target=all
+    volumes:
+      - ./monitoring/loki-config.yml:/etc/loki/config.yml
+      - ./monitoring/loki-wal:/wal
+      - ./monitoring/loki-data:/loki
+    ports:
+      - "3100:3100"
+    networks: [ appnet ]
+
+  promtail:
+    image: grafana/promtail
+    command: -config.file=/etc/promtail/config.yml
+    volumes:
+      - ./monitoring/promtail-config.yml:/etc/promtail/config.yml
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
+      - /var/log:/var/log:ro
+    networks: [ appnet ]
+
+# ─────────────────────────────────────────
+# SECRETS — AES encryption key file
+# ─────────────────────────────────────────
+secrets:
+  data_key:
+    file: ./keys/data.key
+
+# ─────────────────────────────────────────
+# VOLUMES — persistent storage
+# ─────────────────────────────────────────
+volumes:
+  jenkins_home:
+  mysql_data:        # ← new: persists MySQL data
+
+networks:
+  appnet:

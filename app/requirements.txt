@@ -1,0 +1,8 @@
+flask
+pyjwt
+requests
+cryptography
+prometheus_client
+mysql-connector-python
+pytest
+pytest-cov

@@ -1,0 +1,10 @@
+jenkins.war
+*.bin
+keys/
+data/
+__pycache__/
+*.pyc
+.pytest_cache/
+monitoring/loki-data/
+monitoring/loki-wal/
+token.json
