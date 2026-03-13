@@ -164,7 +164,6 @@ Data stored in MySQL is AES encrypted — unreadable without the key:
 
 | patient456  | 0x6741414141414270744158303075477478...  |
 
-```
 
 
 
@@ -210,7 +209,7 @@ Data stored in MySQL is AES encrypted — unreadable without the key:
 
 \## Project Structure
 
-```
+
 
 secure-health-api/
 
