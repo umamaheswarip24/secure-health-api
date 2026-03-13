@@ -182,10 +182,6 @@ Data stored in MySQL is AES encrypted — unreadable without the key:
 
 !\[Jenkins](screenshots/02\_jenkins\_pipeline.png)
 
-!\[Jenkins](screenshots/03\_jenkins\_pipeline.png)
-
-
-
 
 
 \### 3. Prometheus Metrics
