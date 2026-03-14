@@ -1,10 +1,29 @@
-jenkins.war
-*.bin
-keys/
-data/
+# Security — never commit these
+keys/data.key
+keys/data.key.bak
+certs/server.key
+
+# Python
 __pycache__/
 *.pyc
+*.pyo
 .pytest_cache/
+
+# Docker
+data/
+*.bin
+
+# Jenkins
+jenkins.war
+
+# Monitoring data
 monitoring/loki-data/
 monitoring/loki-wal/
+
+# Windows
+Thumbs.db
+desktop.ini
+
+# Temp files
 token.json
+curl

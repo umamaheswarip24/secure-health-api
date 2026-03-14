@@ -1,277 +1,398 @@
-\# Secure Patient Records API
+# 🏥 Secure Patient Records Workflow
 
+A production-grade secure microservice for managing patient records, demonstrating end-to-end healthcare data security with IAM, encryption, TLS, and CI/CD.
 
+## 📋 Table of Contents
+- [Architecture Overview](#architecture-overview)
+- [Technology Stack](#technology-stack)
+- [Project Structure](#project-structure)
+- [Setup & Installation](#setup--installation)
+- [1. Backend Database (MySQL)](#1-backend-database-mysql)
+- [2. Patient MicroService](#2-patient-microservice)
+- [3. Security Constraints](#3-security-constraints)
+- [4. CI/CD Pipeline (Jenkins)](#4-cicd-pipeline-jenkins)
+- [Expected Outcomes](#expected-outcomes)
+- [Screenshots](#screenshots)
 
-A secure microservice for managing patient records with encryption, authentication, and CI/CD.
+---
 
+## 🏗️ Architecture Overview
+```
+┌─────────────┐     JWT Token      ┌──────────────┐
+│   Postman   │ ─────────────────► │   Keycloak   │
+│   Client    │                    │  (IAM/RBAC)  │
+└─────────────┘                    └──────────────┘
+       │                                  │
+       │ HTTPS (TLS)                      │ Verify Token
+       ▼                                  ▼
+┌─────────────┐    AES Encrypt    ┌──────────────┐
+│  Flask API  │ ────────────────► │    MySQL     │
+│  Port 8443  │                   │  (Encrypted  │
+└─────────────┘                   │    BLOBs)    │
+       │                          └──────────────┘
+       │
+┌──────┴───────┐
+│   Jenkins    │  CI/CD: Build → Test → Deploy
+│  Port 9090   │
+└──────────────┘
+```
 
+---
 
-\## Architecture
+## 🛠️ Technology Stack
 
+| Component | Technology | Purpose |
+|---|---|---|
+| API Server | Python Flask | Patient records REST API |
+| Database | MySQL 8.0 | Encrypted patient data storage |
+| IAM | Keycloak 24.0 | Authentication & RBAC |
+| Encryption | AES (Fernet) | Data at rest encryption |
+| Transport | TLS/HTTPS | Data in transit encryption |
+| CI/CD | Jenkins LTS | Automated build/test/deploy |
+| Monitoring | Prometheus + Grafana | Metrics & dashboards |
+| Logging | Loki + Promtail | Centralized log management |
+| Container | Docker Compose | Service orchestration |
 
+---
 
-\- \*\*Flask\*\* — REST API (HTTPS on port 8443)
+## 📁 Project Structure
+```
+secure-health-api/
+├── app/
+│   ├── server.py          # Flask API endpoints
+│   ├── auth.py            # JWT verification + RBAC
+│   ├── storage.py         # AES encryption + MySQL
+│   ├── compliance.py      # Audit logging + data minimization
+│   ├── Dockerfile         # Container definition
+│   ├── requirements.txt   # Python dependencies
+│   ├── conftest.py        # Pytest configuration
+│   ├── pytest.ini         # Test settings
+│   └── tests/
+│       └── test_api.py    # 8 unit tests
+├── db/
+│   └── init.sql           # MySQL schema
+├── certs/
+│   ├── server.crt         # TLS certificate
+│   └── server.key         # TLS private key
+├── keys/
+│   └── data.key           # AES encryption key
+├── monitoring/
+│   ├── prometheus.yml     # Prometheus config
+│   ├── loki-config.yml    # Loki config
+│   └── promtail-config.yml # Promtail config
+├── jenkins/
+│   └── Jenkinsfile        # CI/CD pipeline
+├── scripts/
+├── docker-compose.yml     # All services
+├── Jenkinsfile            # Jenkins pipeline
+├── keygen.py              # AES key generator
+├── keyrotate.py           # AES key rotation
+├── fix_keycloak.py        # Keycloak user setup
+├── test_api.py            # End-to-end API tests
+└── README.md
+```
 
-\- \*\*MySQL\*\* — Encrypted patient data storage (AES/Fernet)
+---
 
-\- \*\*Keycloak\*\* — Identity \& Access Management (JWT + RBAC)
+## ⚙️ Setup & Installation
 
-\- \*\*Jenkins\*\* — CI/CD pipeline with automated tests
+### Prerequisites
+- Docker Desktop (with WSL2 on Windows)
+- Python 3.10+
+- Git
 
-\- \*\*Prometheus + Grafana\*\* — Monitoring and metrics
+### Step 1: Clone the Repository
+```bash
+git clone https://github.com/umamaheswarip24/secure-health-api.git
+cd secure-health-api
+```
 
-\- \*\*Loki + Promtail\*\* — Log aggregation
+### Step 2: Generate AES Encryption Key
+```bash
+python keygen.py
+```
 
+### Step 3: Start All Services
+```bash
+docker compose up -d
+```
 
+### Step 4: Verify All Services Running
+```bash
+docker compose ps
+```
 
-\## Security Features
+All 8 services should be running:
 
+![Docker Services](screenshots/01_docker_services.png)
 
+### Step 5: Setup Keycloak
+```bash
+python fix_keycloak.py
+```
 
-\- AES encryption for all patient data at rest
+This automatically:
+- Creates the `health` realm
+- Sets up `lab_editor` and `lab_viewer` users
+- Assigns correct roles
 
-\- JWT token authentication via Keycloak
+---
 
-\- Role-Based Access Control (viewer / editor roles)
+## 1. Backend Database (MySQL)
 
-\- TLS/HTTPS on port 8443
+### What it does
+MySQL stores all patient records as **AES-encrypted BLOBs**. Even if someone accesses the database directly, they cannot read patient data.
 
-\- Audit logging for every data access
+### Database Schema
+```sql
+CREATE TABLE IF NOT EXISTS patients (
+    patient_id     VARCHAR(64)  PRIMARY KEY,
+    encrypted_data BLOB         NOT NULL,
+    created_at     TIMESTAMP    DEFAULT CURRENT_TIMESTAMP
+);
+```
 
+### How Encryption Works
+```python
+# In storage.py
+def save_record(obj):
+    data = json.dumps(obj).encode('utf-8')   # dict → bytes
+    enc = Fernet(key).encrypt(data)           # AES encrypt
+    # Store encrypted BLOB in MySQL
+    cur.execute("REPLACE INTO patients (patient_id, encrypted_data) VALUES (%s, %s)", (pid, enc))
+```
 
+### Proof: Data Cannot Be Read Directly
+Running `SELECT * FROM patients` shows only encrypted binary data:
 
-\## API Endpoints
+![MySQL Encrypted Data](screenshots/06_mysql_encrypted.png)
 
+---
 
+## 2. Patient MicroService
+
+### API Endpoints
 
 | Method | Endpoint | Role Required | Description |
+|---|---|---|---|
+| GET | `/health` | None | Health check |
+| POST | `/records` | editor | Create patient record |
+| GET | `/records/<pid>` | viewer, editor | Get one patient |
+| GET | `/records` | viewer, editor | Get all patients |
 
-|--------|----------|---------------|-------------|
+### POST Patient Data API
+Creates a new encrypted patient record in MySQL.
 
-| POST | /records | editor | Create patient record |
+**Request:**
+```json
+{
+  "patient_id": "patient001",
+  "name": "John Doe",
+  "age": 45,
+  "diagnosis": "Diabetes",
+  "consent": true
+}
+```
 
-| GET | /records/{id} | viewer, editor | Get one patient |
+**Response:** `201 Created`
+```json
+{"id": "patient001"}
+```
 
-| GET | /records | viewer, editor | Get all patients |
+![Editor Creates Patient](screenshots/editor-creates-patient.png)
 
-| GET | /health | none | Health check |
+---
 
-| GET | /metrics | none | Prometheus metrics |
+### GET One Patient API
+Retrieves and decrypts a specific patient record.
 
+**Response:** `200 OK`
+```json
+{
+  "age": 45,
+  "consent": true,
+  "diagnosis": "Diabetes",
+  "name": "John Doe",
+  "patient_id": "patient001"
+}
+```
 
+![Editor Reads One Patient](screenshots/editor-reads-one-patient.png)
 
-\## Quick Start
+---
 
+### GET All Patients API
+Retrieves and decrypts all patient records.
 
+**Response:** `200 OK` — Returns array of all patients
 
-\### Prerequisites
+![Editor Reads All Patients](screenshots/edirot-reads-all-patients.png)
 
-\- Docker Desktop
+---
 
-\- Docker Compose
+## 3. Security Constraints
 
+### 3.1 IAM with Keycloak (RBAC)
 
+Two Lab Technician roles are enforced:
 
-\### Run the stack
+| User | Role | Can Read | Can Create |
+|---|---|---|---|
+| lab_viewer | viewer | ✅ Yes | ❌ No (403) |
+| lab_editor | editor | ✅ Yes | ✅ Yes |
 
+#### Keycloak Users
+![Keycloak Users](screenshots/keycloak-users.png)
+
+#### lab_editor Role Mapping
+![Lab Editor Role](screenshots/lab-editor.png)
+
+#### lab_viewer Role Mapping
+![Lab Viewer Role](screenshots/lab-viewer.png)
+
+#### Getting a JWT Token
 ```bash
-
-docker compose up -d
-
+curl -s -X POST http://localhost:8080/realms/health/protocol/openid-connect/token \
+  -d "client_id=health-api&username=lab_editor&password=editor123&grant_type=password&client_secret=<secret>"
 ```
 
+#### Viewer Can READ Records
+![Viewer Reads Patient](screenshots/viewer-reads-one-patient.png)
 
+#### Viewer Cannot CREATE Records (403 Forbidden)
+![Viewer Forbidden](screenshots/viewer-creates-patient.png)
 
-\### Services
+---
 
+### 3.2 TLS Encryption in Transit
 
-
-| Service | URL |
-
-|---------|-----|
-
-| Flask API | https://localhost:8443 |
-
-| Keycloak | http://localhost:8080 |
-
-| Jenkins | http://localhost:9090 |
-
-| Prometheus | http://localhost:9091 |
-
-| Grafana | http://localhost:3000 |
-
-
-
-\## Getting a Token
-
+The API runs exclusively on HTTPS port 8443. Plain HTTP is rejected.
 ```bash
+# HTTP fails
+curl http://localhost:8443/health
+# Result: Empty reply from server
 
-curl -X POST http://localhost:8080/realms/health/protocol/openid-connect/token \\
-
-&#x20; -d "client\_id=health-api\&username=lab\_editor\&password=editor123\&grant\_type=password\&client\_secret=YOUR\_SECRET"
-
+# HTTPS works
+curl -k https://localhost:8443/health
+# Result: {"status": "ok"}
 ```
 
+#### TLS Handshake Confirmation
+![TLS Handshake](screenshots/tls-handshake.png)
 
+#### Health Check via HTTPS
+![Health Check](screenshots/health-check.png)
 
-\## Testing the API
+---
 
+### 3.3 AES Encryption at Rest with Key Rotation
+
+Patient data is encrypted using **Fernet (AES-128-CBC)** before storing in MySQL.
+
+#### Key Generation
 ```bash
-
-\# Create a patient record (editor role)
-
-curl -k -X POST https://localhost:8443/records \\
-
-&#x20; -H "Authorization: Bearer YOUR\_TOKEN" \\
-
-&#x20; -H "Content-Type: application/json" \\
-
-&#x20; -d '{"patient\_id":"p001","name":"John Doe","age":45,"diagnosis":"Diabetes"}'
-
-
-
-\# Get a patient record (viewer role)
-
-curl -k https://localhost:8443/records/p001 \\
-
-&#x20; -H "Authorization: Bearer YOUR\_TOKEN"
-
+python keygen.py
+# Generates: keys/data.key
 ```
 
-
-
-\## Running Tests
-
+#### Key Rotation
+The `keyrotate.py` script:
+1. Reads the current key
+2. Generates a new key
+3. Re-encrypts ALL records in MySQL with the new key
+4. Backs up the old key
+5. Saves the new key
 ```bash
-
-docker run --rm -e APP\_DATA\_KEY=/tmp/test.key -e DB\_HOST=invalid -e TESTING=true health-api:local python -m pytest tests/ -v
-
+python keyrotate.py
 ```
 
+![Key Rotation](screenshots/key-rotation.png)
 
-
-\## Encrypted Data in MySQL
-
-
-
-Data stored in MySQL is AES encrypted — unreadable without the key:
-
+After rotation, restart the app to load the new key:
+```bash
+docker compose restart app
 ```
 
-| patient\_id  | encrypted\_data                          |
+---
 
-|-------------|-----------------------------------------|
+## 4. CI/CD Pipeline (Jenkins)
 
-| patient456  | 0x6741414141414270744158303075477478...  |
-
-
-
-
-\## Screenshots
-
-
-
-\### 1. All Services Running
-
-!\[Services](screenshots/01\_docker\_services.png)
-
-
-
-\### 2. Jenkins Pipeline Success
-
-!\[Jenkins](screenshots/02\_jenkins\_pipeline.png)
-
-
-
-\### 3. Prometheus Metrics
-
-!\[Prometheus](screenshots/03\_prometheus.png)
-
-
-
-\### 4. Grafana Dashboard
-
-!\[Grafana](screenshots/04\_grafana.png)
-
-
-
-\### 5. All 7 Tests Passing
-
-!\[Tests](screenshots/05\_tests\_passing.png)
-
-
-
-\### 6. Encrypted Data in MySQL
-
-!\[Encryption](screenshots/06\_mysql\_encrypted.png)
-
-
-
-\## Project Structure
-
-
-
-secure-health-api/
-
-├── app/
-
-│   ├── server.py         # Flask API
-
-│   ├── auth.py           # JWT + RBAC
-
-│   ├── storage.py        # MySQL + AES encryption
-
-│   ├── compliance.py     # Audit log + consent
-
-│   ├── Dockerfile
-
-│   ├── requirements.txt
-
-│   ├── conftest.py
-
-│   ├── pytest.ini
-
-│   └── tests/
-
-│       └── test\_api.py   # 7 unit tests
-
-├── db/
-
-│   └── init.sql          # MySQL schema
-
-├── monitoring/
-
-│   ├── prometheus.yml
-
-│   ├── loki-config.yml
-
-│   └── promtail-config.yml
-
-├── certs/                # TLS certificates
-
-├── Jenkinsfile
-
-├── docker-compose.yml
-
-└── README.md
-
+### Pipeline Stages
+```
+Checkout → Build → Test → Security Check → Deploy
 ```
 
+| Stage | Action |
+|---|---|
+| Checkout | Get latest code |
+| Build | Build Docker image |
+| Test | Run 8 pytest unit tests |
+| Security Check | Verify TLS + RBAC + AES |
+| Deploy | Deploy via docker compose |
 
+### Jenkins Dashboard
+![Jenkins Dashboard](screenshots/02_jenkins_pipeline.png)
 
-\## CI/CD Pipeline
+### Pipeline Console Output (All Tests Passing)
+![Jenkins Pipeline](screenshots/03_jenkins_pipeline.png)
 
+### Unit Tests (8 Tests)
 
+| Test | What it Verifies |
+|---|---|
+| `test_data_minimize` | Sensitive fields stripped from patient data |
+| `test_enforce_consent_denied` | Cannot store data without patient consent |
+| `test_enforce_consent_granted` | Consent=True allows storage |
+| `test_encryption_roundtrip` | AES encrypt→decrypt gives original data |
+| `test_health_endpoint` | GET /health returns 200 OK |
+| `test_post_record_editor` | POST /records works for editor role |
+| `test_get_record_viewer` | GET /records/<pid> works for viewer role |
+| `test_get_all_records_viewer` | GET /records works for viewer role |
 
-Jenkins pipeline stages:
+![Tests Passing](screenshots/05_tests_passing.png)
 
-1\. \*\*Checkout\*\* — Get code
+---
 
-2\. \*\*Build\*\* — Build Docker image
+## 📊 Expected Outcomes
 
-3\. \*\*Test\*\* — Run 7 unit tests automatically
+### ✅ Secure Workflow via Postman
+All API endpoints tested and verified with JWT tokens from Keycloak.
 
-4\. \*\*Security Check\*\* — Verify security baseline
+### ✅ Security & Compliance Proven
+- **IAM enforces RBAC** — viewer gets 403 on POST, editor gets 201
+- **TLS encrypts traffic** — schannel SSL/TLS handshake confirmed
+- **AES encrypts data at rest** — MySQL shows unreadable binary BLOBs
+- **Key rotation** — all records re-encrypted with new key seamlessly
 
-5\. \*\*Deploy\*\* — Start all services
+### ✅ DevOps Integration
+- Jenkins pipeline automates build → test → deploy
+- 8 unit tests cover all API endpoints
+- Docker Compose orchestrates all 8 services
 
+### ✅ Real-World Workflow
+- Models healthcare-grade security (HIPAA-ready audit logging)
+- Demonstrates DevOps best practices
+- Prometheus metrics + Grafana monitoring
+
+![Prometheus Metrics](screenshots/03_prometheus.png)
+![Grafana Dashboard](screenshots/04_grafana.png)
+
+---
+
+## 🔧 Service Ports
+
+| Service | Port | URL |
+|---|---|---|
+| Flask API (HTTPS) | 8443 | https://localhost:8443 |
+| Keycloak | 8080 | http://localhost:8080 |
+| Jenkins | 9090 | http://localhost:9090 |
+| MySQL | 3307 | localhost:3307 |
+| Prometheus | 9091 | http://localhost:9091 |
+| Grafana | 3000 | http://localhost:3000 |
+| Loki | 3100 | http://localhost:3100 |
+
+---
+
+## 👤 Author
+**umamaheswarip24**  
+Secure Patient Records Workflow — Cloud & DevOps Security Assignment

@@ -119,3 +119,31 @@ def test_get_record_viewer(monkeypatch):
     )
     assert response.status_code == 200
     assert response.get_json()['name'] == 'John'
+# ═════════════════════════════════════════
+# TEST 8 — GET /records all (viewer role)
+# Checks viewer can retrieve all records
+# ═════════════════════════════════════════
+def test_get_all_records_viewer(monkeypatch):
+    import server, storage
+    mock_patients = [
+        {'patient_id': 'p001', 'name': 'John', 'diagnosis': 'Flu'},
+        {'patient_id': 'p002', 'name': 'Jane', 'diagnosis': 'Cold'}
+    ]
+    monkeypatch.setattr(server, 'get_all_records', lambda: mock_patients)
+    monkeypatch.setattr(storage, 'get_all_records', lambda: mock_patients)
+
+    server.app.config['TESTING'] = True
+    client = server.app.test_client()
+
+    response = client.get(
+        '/records',
+        headers={
+            'Authorization': 'Bearer fake-token',
+            'X-Test-Role': 'viewer'
+        }
+    )
+    assert response.status_code == 200
+    data = response.get_json()
+    assert isinstance(data, list)
+    assert len(data) == 2
+    assert data[0]['name'] == 'John'
